@@ -58,30 +58,38 @@ public class MainActivity extends Activity {
 
     protected static FaceDetector faceDetector = null;
     protected static GazeDetector gazeDetector = null;
-    protected static Bitmap mBitmap;
-    protected static Bitmap mEyeBitmap;
+    protected Bitmap mBitmap;
+    protected static Bitmap mLeftEyeBitmap;
+    protected static Bitmap mRightEyeBitmap;
     protected static int[] mDebugArray;
     protected static byte[] mFrameArray;
     protected CameraSource mCameraSource = null;
     protected CameraSourcePreview mPreview;
     protected GraphicOverlay mGraphicOverlay;
-
-    protected boolean DEBUG_MODE =
-            true;
-//            false;
-    protected int eyeRegionWidth = 80;
-    protected int eyeRegionHeight = 60;
+    protected int eyeRegionWidth = 160;
+    protected int eyeRegionHeight = 120;
     protected int mDownSampleScale = 2;
     protected int mUpSampleScale = 4;
     protected int mDThresh = 10;
     protected double mGradThresh = 25.0;
-    protected int iris_pixel = 0;
-    protected int cx;
-    protected int cy;
+    protected int l_iris_pixel = 0;
+    protected int lx;
+    protected int ly;
+    protected int r_iris_pixel = 0;
+    protected int rx;
+    protected int ry;
     protected int mUpThreshold = 8;
     protected int mDownThreshold = -4;
     protected int mLeftThreshold = 6;
     protected int mRightThreshold = -6;
+
+    protected int circle_x = 40;
+    protected int circle_y = 40;
+    protected Paint circlePaint;
+    protected long start = System.currentTimeMillis()/2000;
+    protected long currentTime = System.currentTimeMillis()/2000;
+    protected int hopsCount = 1;
+    protected boolean turned = true;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -96,7 +104,6 @@ public class MainActivity extends Activity {
         setContentView(R.layout.activity_main);
 
         // Face Tracking stuff
-        //mPreview = new Preview(this, DrawOnTop); // TODO(fyordan): Probably need to create a better preview
         mPreview = (CameraSourcePreview) findViewById(R.id.preview);
         mGraphicOverlay = (GraphicOverlay) findViewById(R.id.faceOverlay);
         faceDetector = new FaceDetector.Builder(getApplicationContext())
@@ -108,10 +115,12 @@ public class MainActivity extends Activity {
                 new MultiProcessor.Builder<>(new GraphicFaceTrackerFactory()).build());
 
         mCameraSource = new CameraSource.Builder(getApplicationContext(), gazeDetector)
-               // .setRequestedPreviewSize(640, 480)
                 .setFacing(CameraSource.CAMERA_FACING_FRONT)
                 .setRequestedFps(30.0f)
                 .build();
+        circlePaint= new Paint();
+        circlePaint.setColor(Color.BLUE);
+        circlePaint.setStyle(Paint.Style.FILL);
     }
 
     @Override
@@ -184,7 +193,6 @@ public class MainActivity extends Activity {
     //  So, annoyingly, have to now (re-)do things that didn't happen in onCreate() because permissions were not there yet.
 
     @Override
-    // overrides method in android.app.Activity
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
         String TAG = "onRequestPermitResult";
         if (DBG) Log.w(TAG, "in onRequestPermissionsResult(...) (" + requestCode + ")");
@@ -334,96 +342,66 @@ public class MainActivity extends Activity {
             if (face == null) {
                 return;
             }
-
-
-            // Draws a circle at the position of the detected face, with the face's track id below.
-            float x = translateX(face.getPosition().x + face.getWidth() / 2);
-            float y = translateY(face.getPosition().y + face.getHeight() / 2);
-
-            // Draws a bounding box around the face.
-            float xOffset = scaleX(face.getWidth() / 2.0f);
-            float yOffset = scaleY(face.getHeight() / 2.0f);
-            float left = x - xOffset;
-            float top = y - yOffset;
-            float right = x + xOffset;
-            float bottom = y + yOffset;
-//            canvas.drawRect(left, top, right, bottom, mBoxPaint);
-//            canvas.drawCircle(x,y,5,mBoxPaint);
-
-//            canvas.drawBitmap(mBitmap, left, top, null);
-
+            if (System.currentTimeMillis()/2000 - currentTime > 0)
+                turned = true;
+            currentTime = System.currentTimeMillis()/2000;
+            long deltaTime = currentTime - start;
+            if (turned) {
+                if (deltaTime % 4 == 0) {
+                    circlePaint.setColor(Color.BLUE);
+                    Log.i("GazeIntoTheIris", "ImGoingBlue");
+                    if (deltaTime > 0) {
+                        circle_x = (circle_x + canvas.getWidth()/3)%canvas.getWidth();
+                        circle_y = 40+ (hopsCount/3)*canvas.getHeight()/3;
+                    }
+                    hopsCount++;
+                } else {
+                    circlePaint.setColor(Color.RED);
+                    Log.i("GazeIntoTheIris", "ImGoingRed");
+                }
+                turned = false;
+            }
+            if (hopsCount < 10) {
+                canvas.drawCircle(circle_x, circle_y, 40, circlePaint);
+                Log.i("GazeIntoTheIris", String.format("DOT: %d, %d", circle_x, circle_y));
+            }
+            else
+                Log.i("GazeIntoTheIris", "STOP");
             for (Landmark landmark : face.getLandmarks()) {
                 int landmark_type = landmark.getType();
-//                if (landmark_type == Landmark.LEFT_EYE || landmark_type == Landmark.RIGHT_EYE) {
                 if (landmark_type == Landmark.LEFT_EYE) {
-                    cx = (int) translateX(landmark.getPosition().x);
-                    cy = (int) translateY(landmark.getPosition().y);
-                    Paint paint = new Paint();
-                    paint.setColor(Color.GREEN);
-                    paint.setStyle(Paint.Style.STROKE);
-                    paint.setStrokeWidth(5);
+                    lx = (int) translateX(landmark.getPosition().x);
+                    ly = (int) translateY(landmark.getPosition().y);
 
-                    // TODO(fyordan): These numbers are arbitray, probably should be proportional to face dimensions.
-//                    canvas.drawRect(cx-eyeRegionWidth/2, cy-eyeRegionHeight/2,
-//                            cx+eyeRegionWidth/2, cy+eyeRegionHeight/2, paint);
-                    //canvas.drawCircle(cx, cy, 10, paint);
                     int eye_region_left = (int)landmark.getPosition().x-eyeRegionWidth/2;
                     int eye_region_top = (int)landmark.getPosition().y-eyeRegionHeight/2;
+                    mLeftEyeBitmap = createBitmap(mBitmap,Math.min(Math.max(eye_region_left, 0), mBitmap.getWidth()-eyeRegionWidth), Math.min(Math.max(eye_region_top, 0), mBitmap.getHeight()-eyeRegionHeight),eyeRegionWidth, eyeRegionHeight);
 
-                    mEyeBitmap = toGrayscale(
-                            createBitmap(mBitmap,
-                                    eye_region_left,
-                                    eye_region_top,
-                                    eyeRegionWidth, eyeRegionHeight));
-
-                    mEyeBitmap = createScaledBitmap(mEyeBitmap,
-                            eyeRegionWidth/mDownSampleScale,
-                            eyeRegionHeight/mDownSampleScale,
-                            true);
-
-                    iris_pixel = calculateEyeCenter(mEyeBitmap, mGradThresh, mDThresh);
-//                    if (mBitmapGradientMag != null)  canvas.drawBitmap(mBitmapGradientMag, 0, 0, paint);
-                    //canvas.drawBitmap(eyeBitmap, 0, 0, paint);
+                    l_iris_pixel = calculateEyeCenter(mLeftEyeBitmap, mGradThresh, mDThresh);
+                    int iris_x = l_iris_pixel%mLeftEyeBitmap.getWidth()*mDownSampleScale*mUpSampleScale;
+                    int iris_y = l_iris_pixel/mLeftEyeBitmap.getWidth()*mDownSampleScale*mUpSampleScale;
+                    int x_gaze = l_iris_pixel%mLeftEyeBitmap.getWidth() - mLeftEyeBitmap.getWidth()/2;
+                    int y_gaze = mLeftEyeBitmap.getHeight()/2 - l_iris_pixel/mLeftEyeBitmap.getWidth();
+                    Log.i("GazeIntoTheIris", String.format("LEFT: %d, %d, %d, %d", iris_x, iris_y, x_gaze, y_gaze));
                 }
-            }
-            if (mEyeBitmap != null && DEBUG_MODE) {
-                Bitmap debugBitmap = createBitmap(mEyeBitmap.getWidth()-2, mEyeBitmap.getHeight()-2, Bitmap.Config.ARGB_8888);//BitmapFactory.decodeByteArray(mDebugArray, 0, mDebugArray.length);
-                debugBitmap.copyPixelsFromBuffer(IntBuffer.wrap(mDebugArray));
-                Bitmap resizedBitmap = Bitmap.createScaledBitmap(
-//                        mEyeBitmap,
-                        debugBitmap,
-                        eyeRegionWidth*mUpSampleScale,
-                        eyeRegionHeight*mUpSampleScale,
-                        false);
-                canvas.drawBitmap(resizedBitmap, 0, 0, mBoxPaint);
-                int iris_x = iris_pixel%mEyeBitmap.getWidth()*mDownSampleScale*mUpSampleScale;
-                int iris_y = iris_pixel/mEyeBitmap.getWidth()*mDownSampleScale*mUpSampleScale;
-                canvas.drawCircle(iris_x, iris_y, mDownSampleScale*mUpSampleScale*mDThresh, mBoxPaint);
-            }
-            if (mEyeBitmap != null) {
-//                int iris_X = (-iris_pixel%mEyeBitmap.getWidth())*mDownSampleScale + cx + (int)scaleX((float)eyeRegionWidth/2);
-//                int iris_Y = (iris_pixel/mEyeBitmap.getWidth())*mDownSampleScale + cy - (int)scaleY((float)eyeRegionHeight/2);
-//                canvas.drawCircle(iris_X, iris_Y, mDThresh, mBoxPaint);
-                Paint paint = new Paint();
-                paint.setColor(Color.GREEN);
-                paint.setStyle(Paint.Style.STROKE);
-                paint.setStrokeWidth(5);
-                paint.setTextSize(60);
-                int x_gaze = iris_pixel%mEyeBitmap.getWidth() - mEyeBitmap.getWidth()/2;
-                int y_gaze = mEyeBitmap.getHeight()/2 - iris_pixel/mEyeBitmap.getWidth();
-                if (x_gaze < mRightThreshold) { canvas.drawText("Right", 400, 200, paint); }
-                if (x_gaze > mLeftThreshold) { canvas.drawText("Left", 400, 200, paint); }
-                if (y_gaze > mUpThreshold) { canvas.drawText("Up", 400, 400, paint); }
-                if (y_gaze < mDownThreshold) { canvas.drawText("Down", 400, 400, paint); }
-                Log.e("EyePixelVector", "X: " + x_gaze + "  Y: " + y_gaze);
+                else if (landmark_type == Landmark.RIGHT_EYE) {
+                    rx = (int) translateX(landmark.getPosition().x);
+                    ry = (int) translateY(landmark.getPosition().y);
+
+                    int eye_region_left = (int)landmark.getPosition().x-eyeRegionWidth/2;
+                    int eye_region_top = (int)landmark.getPosition().y-eyeRegionHeight/2;
+                    mRightEyeBitmap = createBitmap(mBitmap, Math.min(Math.max(eye_region_left, 0), mBitmap.getWidth()-eyeRegionWidth), Math.min(Math.max(eye_region_top, 0), mBitmap.getHeight()-eyeRegionHeight), eyeRegionWidth, eyeRegionHeight);
+                    r_iris_pixel = calculateEyeCenter(mRightEyeBitmap, mGradThresh, mDThresh);
+                    int iris_x = r_iris_pixel%mRightEyeBitmap.getWidth()*mDownSampleScale*mUpSampleScale;
+                    int iris_y = r_iris_pixel/mRightEyeBitmap.getWidth()*mDownSampleScale*mUpSampleScale;
+                    int x_gaze = r_iris_pixel%mRightEyeBitmap.getWidth() - mRightEyeBitmap.getWidth()/2;
+                    int y_gaze = mLeftEyeBitmap.getHeight()/2 - l_iris_pixel/mRightEyeBitmap.getWidth();
+                    Log.i("GazeIntoTheIris", String.format("RIGHT: %d, %d, %d, %d", iris_x, iris_y, x_gaze, y_gaze));
+                }
             }
         }
 
         protected int calculateEyeCenter(Bitmap eyeMap, double gradientThreshold, int d_thresh) {
-            // TODO(fyordan): Shouldn't use mImageWidth and mImageHeight, but grayData dimensions.
-            // Calculate gradients.
-            // Ignore edges of image to not deal with boundaries.
-
             Log.e("CalculateEyeCenter", "Well it entered");
             int imageWidth = eyeMap.getWidth();
             int imageHeight = eyeMap.getHeight();
@@ -457,7 +435,6 @@ public class MainActivity extends Activity {
             }
             Log.e("CalculateEyeCenter", "mags above threshold: " + magCount);
             Log.e("CalculateEyeCenter", "Now we need to iterate through them all again");
-            // For all potential centers
             int c_n = gradients.length/2;
             double max_c = 0;
             for (int i=1; i < imageWidth-1; i++) {
@@ -483,7 +460,6 @@ public class MainActivity extends Activity {
                             sumC += Math.pow(d_i * gradients[k][0] + d_j * gradients[k][1], 2);
                         }
                     }
-                    // TODO(fyordan): w_c should be the value in a gaussian filtered graydata
                     sumC /= (grayData[n] & 0xff);
                     if (sumC > max_c) {
                         c_n = n;
